@@ -1,0 +1,36 @@
+# Pricompa (priconne companion)
+
+_Pricompa_ is an auxiliary tool for game _priconne_, the major functionality
+is an auto clicker but designed perticularly for game playing.  More
+funcationalities, like time-line recorder or status monitor, are planned,
+but the developer is not sure when to do these.
+
+The project use C++ and CMake, as a usual window application is.
+
+@[CMakeLists.txt@]
+cmake_minimum_required(VERSION 3.2)
+project(Pricompa)
+add_executable(pricompa pricompa.cc)
+@
+
+@[pricompa.cc@]
+@{includes@}
+@{prototypes@}
+@{functions@}
+@
+
+
+## The main loop
+
+@[functions@]
+int
+main(int argn, char *argv[])
+{
+	printf("Hello\n");
+}
+@
+@[includes@]
+#include <stdio.h>
+@
+
+
