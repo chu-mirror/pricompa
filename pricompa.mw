@@ -3,34 +3,233 @@
 _Pricompa_ is an auxiliary tool for game _priconne_, the major functionality
 is an auto clicker but designed perticularly for game playing.  More
 funcationalities, like time-line recorder or status monitor, are planned,
-but the developer is not sure when to do these.
+but the developer is not sure when to do these stuffs.
 
-The project use C++ and CMake, as a usual window application is.
+The project use C and CMake, as a Win32 application usually is.
 
 @[CMakeLists.txt@]
 cmake_minimum_required(VERSION 3.2)
-project(Pricompa)
-add_executable(pricompa pricompa.cc)
+project(Pricompa LANGUAGES C)
+add_executable(pricompa pricompa.c)
 @
 
-@[pricompa.cc@]
+@[pricompa.c@]
 @{includes@}
+@{data@}
 @{prototypes@}
 @{functions@}
 @
 
 
-## The main loop
+## Main loop
+
+Main loop is fairly straight forward, use a common pattern as the design.
 
 @[functions@]
 int
 main(int argn, char *argv[])
 {
-	printf("Hello\n");
+	int quit = 0;  /* whether to quit main loop */
+	@{intialize variables@}
+	while (!quit) {
+		@{analyze status@}
+		@{take actions@}
+		@{sleep for a while@}
+	}
 }
 @
+
+## Console I/O
+
+The program is a console application, users can suppose prompt information from
+the console.  I simply use standard C library here.
+
 @[includes@]
 #include <stdio.h>
 @
 
+@[functions@]
+void
+info(const char *msg)
+{
+	printf("%s\n", msg);
+}
+@
 
+@[prototypes@]
+void info(const char *);
+@
+
+## Interact with Windows
+
+Some actions invoking windows system calls are defined in this section.
+
+Do not use utf-16.
+@[includes@]
+#undef _UNICODE
+#include <windows.h>
+@
+
+Some actions may result error, but I do not want to handle error messages
+in Windows way outside this section, so prepare a buffer to transfer error messages.
+@[data@]
+#define MAXMSG 2048
+char errmsg[2048];
+@
+
+And the corresponding procedures for saving error massage to _errmsg_.
+@[functions@]
+void
+sys_errmsg()
+{
+	DWORD eno, msglen;
+	LPTSTR pmsg;
+	
+	eno = GetLastError();
+	msglen = FormatMessage(
+		FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+		NULL, eno,
+		MAKELANGID(LANG_NEUTRAL, SUBLANG_NEUTRAL),
+		(LPTSTR) &pmsg, 0, NULL);
+	if (msglen >= MAXMSG) {
+		info("fatal error: error massage is too long");
+		exit(1);
+	} else if (msglen > 0) {
+		sprintf(errmsg, "%s", (char *)pmsg);
+	} else {
+		sprintf(errmsg, "the error number: %d", eno);
+	}
+}
+
+void
+nonsys_errmsg(const char *msg)
+{
+	if (strlen(msg) >= MAXMSG) {
+		info("fatal error: error massage is too long");
+		exit(1);
+	} else {
+		sprintf(errmsg, msg);
+	}
+}
+@
+
+@[prototypes@]
+void sys_errmsg(void);
+void nonsys_errmsg(const char *);
+@
+
+### Click once
+
+To do auto clicks in Windows, let's define the basic actions at first.
+Because this auto clicker is designed particularly for priconne, it dose not
+need a very high frequency, either the need to configure the behaviour.
+
+@[functions@]
+int
+click_once()
+{
+	INPUT inputs[2];
+	UINT n_sent;
+
+	@{construct inputs@}
+
+	n_sent = SendInput(2, inputs, sizeof(INPUT));
+	@{handle error@}
+}
+@
+
+@[prototypes@]
+int click_once(void);
+@
+
+Check the official document for specification,
+the [link](https://docs.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-input).
+
+@[construct inputs@]
+inputs[0].type = inputs[1].type = INPUT_MOUSE;
+inputs[0].mi.dx = inputs[1].mi.dx = 0;
+inputs[0].mi.dy = inputs[1].mi.dy = 0;
+inputs[0].mi.time = 0;
+inputs[0].mi.time = 5;
+inputs[0].mi.mouseData = inputs[1].mi.mouseData = 0;
+inputs[0].mi.dwExtraInfo = inputs[1].mi.dwExtraInfo = (ULONG_PTR) NULL;
+
+inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+inputs[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+@
+
+The custom used in this error handling is consistent through the whole program.
+
++ 0: succeed
++ 1: known error, save error massage to errmsg
++ 2: unknown error
+
+@[handle error@]
+if (n_sent != 2) { /* something wrong */
+	if (n_sent == 0) {
+		sys_errmsg();
+		return 1;
+	} else {
+		return 2;
+	}
+} else {
+	return 0;
+}
+@
+
+Based on the function above, we now can define a function to click at
+a purposed position.  The values of x and y are follow the api specification
+of _SendInput_, change from 0 to 65535, (0,0) is the upper-left corner,
+(65535, 65535) is the lower-right corner.
+
+@[functions@]
+int
+click_once_at(int x, int y)
+{
+	@{move mouse@}
+
+	return click_once();
+}
+@
+
+@[prototypes@]
+int click_once_at(int, int);
+@
+
+@[move mouse@]
+{
+	INPUT input;
+	UINT n_sent;
+	input.type = INPUT_MOUSE;
+	input.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
+	input.mi.dx = (LONG) x;
+	input.mi.dy = (LONG) y;
+	
+	input.mi.time = 0;
+	input.mi.mouseData = 0;
+	input.mi.dwExtraInfo = (ULONG_PTR) NULL;
+
+	n_sent = SendInput(1, &input, sizeof(INPUT));
+	if (n_sent != 1) {
+		sys_errmsg();
+		return 1;
+	}
+}
+@
+
+### Information of game's window
+
+## Game related
+
+## Auto Clicker
+
+The highest fps priconne can suffort is 60fps, so, a sleeping time of 15ms
+may be sufficient.
+
+@[sleep for a while@]
+Sleep(500);
+@
+
+@[take actions@]
+click_once_at(20000, 20000);
+@
