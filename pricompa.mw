@@ -5,7 +5,7 @@ is an auto clicker but designed perticularly for game playing.  More
 funcationalities, like time-line recorder or status monitor, are planned,
 but the developer is not sure when to do these stuffs.
 
-The project use C and CMake, as a Win32 application usually is.
+This project uses C and CMake, as a Win32 application usually is.
 
 @[CMakeLists.txt@]
 cmake_minimum_required(VERSION 3.2)
@@ -21,66 +21,57 @@ add_executable(pricompa pricompa.c)
 @
 
 
-## Main loop
+## Main loop and Basic style
 
-Main loop is fairly straight forward, use a common pattern as the design.
+Main loop is fairly straight forward.
 
 @[functions@]
 int
 main(int argn, char *argv[])
 {
-	int quit = 0;  /* whether to quit main loop */
-	@{intialize variables@}
-	while (!quit) {
-		@{analyze status@}
-		@{take actions@}
-		@{sleep for a while@}
-	}
+	@{initialize environment@}
+	@{receive and dispatch events@}
+	@{do cleaning@}
 }
 @
 
-## Console I/O
+The program is built upon Win32 API, but do not use utf-16.
 
-The program is a console application, users can suppose prompt information from
-the console.  I simply use standard C library here.
-
-@[includes@]
-#include <stdio.h>
-@
-
-@[functions@]
-void
-info(const char *msg)
-{
-	printf("%s\n", msg);
-}
-@
-
-@[prototypes@]
-void info(const char *);
-@
-
-## Interact with Windows
-
-Some actions invoking windows system calls are defined in this section.
-
-Do not use utf-16.
 @[includes@]
 #undef _UNICODE
 #include <windows.h>
 @
 
-Some actions may result error, but I do not want to handle error messages
-in Windows way outside this section, so prepare a buffer to transfer error messages.
+@[receive and dispatch events@]
+{
+	MSG msg;
+	BOOL bRet;
+	while ((bRet = GetMessage(&msg, NULL, 0, 0)) > 0) {
+		switch (msg.message) {
+			@{event handlers@}
+		}
+	}
+	if (bRet == -1) { /* something wrong */
+		@{handle error in GetMessage@}
+	}
+}
+@
+
+Since I do not want to handle error messages in Windows way, neither the management
+of memory, so prepare a buffer to transfer error messages.
 @[data@]
 #define MAXMSG 2048
 char errmsg[2048];
 @
 
+@[initialize environment@]
+errmsg[MAXMSG-1] = '\0';
+@
+
 And the corresponding procedures for saving error massage to _errmsg_.
 @[functions@]
 void
-sys_errmsg()
+get_sys_errmsg()
 {
 	DWORD eno, msglen;
 	LPTSTR pmsg;
@@ -102,7 +93,7 @@ sys_errmsg()
 }
 
 void
-nonsys_errmsg(const char *msg)
+get_nonsys_errmsg(const char *msg)
 {
 	if (strlen(msg) >= MAXMSG) {
 		info("fatal error: error massage is too long");
@@ -114,27 +105,146 @@ nonsys_errmsg(const char *msg)
 @
 
 @[prototypes@]
-void sys_errmsg(void);
-void nonsys_errmsg(const char *);
+void get_sys_errmsg(void);
+void get_nonsys_errmsg(const char *);
 @
 
-### Click once
+The error handling is also straight forward.
+@[handle error in GetMessage@]
+get_sys_errmsg();
+@{show error message@}
+exit(1);
+@
 
-To do auto clicks in Windows, let's define the basic actions at first.
-Because this auto clicker is designed particularly for priconne, it dose not
-need a very high frequency, either the need to configure the behaviour.
+The program is a console application, users can suppose information prompted by
+the console.  I simply use standard C library here.
+
+@[includes@]
+#include <stdio.h>
+@
+
+@[functions@]
+void
+info(const char *msg)
+{
+	printf("%s\n", msg);
+}
+@
+
+@[prototypes@]
+void info(const char *);
+@
+
+@[show error message@]
+info(errmsg);
+@
+
+Use hotkeys to interact with _Pricompa_.
+
+@[event handlers@]
+case WM_HOTKEY:
+	switch (msg.wParam) {
+	@{hotkey handlers@}
+	}
+break;
+@
+
+Hotkeys' modifier is fixed to CTRL+SHIFT.
+@[data@]
+#define MOD (MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT)
+@
+
+The custom of exception handling is consistent through out the program.
+	0: succeed
+	1: known error, save massage to errmsg
+	2: unknown error
+
+@[functions@]
+int
+register_hotkey(char key, int id)
+{
+	if (RegisterHotKey(NULL, id, MOD, key-'A'+0x41)) {
+		return 0;
+	} else {
+		get_sys_errmsg();
+		return 1;
+	}
+}
+@
+
+@[prototypes@]
+int register_hotkey(char, int);
+@
+
+## Interact with Game
+
+Clicking are supposed to be the only officially supported way we send inputs to game,
+but we need the clicks coming from hardware driver level.  _Pricompa_ uses
+library [interception](https://github.com/oblitum/Interception)
+to interact with game.  This library allows a process functioning as a filter
+of device inputs.
+
+@[CMakeLists.txt@]
+target_link_libraries(pricompa
+	@{libraries@}
+)
+@
+
+@[includes@]
+#include "interception.h"
+@
+
+All source and library files are placed under the same directory.
+@[libraries@]
+PRIVATE ${CMAKE_SOURCE_DIR}/interception.lib
+@
+
+To use this library, we need to declare some variables at first.
+@[data@]
+InterceptionContext context = NULL;
+InterceptionDevice device;
+@
+
+To do clicking, we need a basic action of clicking once at purposed position,
+since the game has a fixed layout, we can simply record these positions in an array.
+@[data@]
+typedef struct position {
+	int x;
+	int y;
+} position;
+
+position positions[200]; /* a magic number, but I don't want to waste time on it */
+@
+
+Because we use this library to send mouse input rather than to filter it, we should
+construct input events ourselves.
+@[data@]
+InterceptionMouseStroke left_down, left_up;
+@
+
+@[initialize environment@]
+left_down.state = INTERCEPTION_MOUSE_LEFT_BUTTON_DOWN;
+left_up.state = INTERCEPTION_MOUSE_LEFT_BUTTON_UP;
+@
 
 @[functions@]
 int
 click_once()
 {
-	INPUT inputs[2];
-	UINT n_sent;
-
-	@{construct inputs@}
-
-	n_sent = SendInput(2, inputs, sizeof(INPUT));
-	@{handle error@}
+	int left = 2;
+	if (context == NULL) {
+		get_nonsys_errmsg("have not initialize context");
+		return 1;
+	}
+	left -= interception_send(context, INTERCEPTION_MOUSE(1), (InterceptionStroke *)&left_down, 1);
+	Sleep(2);
+	left -= interception_send(context, INTERCEPTION_MOUSE(1), (InterceptionStroke *)&left_up, 1);
+	if (left == 0) {
+		return 0;
+	} else {
+		get_nonsys_errmsg("failed to send one click");
+		return 1;
+	}
 }
 @
 
@@ -142,94 +252,43 @@ click_once()
 int click_once(void);
 @
 
-Check the official document for specification,
-the [link](https://docs.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-input).
-
-@[construct inputs@]
-inputs[0].type = inputs[1].type = INPUT_MOUSE;
-inputs[0].mi.dx = inputs[1].mi.dx = 0;
-inputs[0].mi.dy = inputs[1].mi.dy = 0;
-inputs[0].mi.time = 0;
-inputs[0].mi.time = 5;
-inputs[0].mi.mouseData = inputs[1].mi.mouseData = 0;
-inputs[0].mi.dwExtraInfo = inputs[1].mi.dwExtraInfo = (ULONG_PTR) NULL;
-
-inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-inputs[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
-@
-
-The custom used in this error handling is consistent through the whole program.
-
-+ 0: succeed
-+ 1: known error, save error massage to errmsg
-+ 2: unknown error
-
-@[handle error@]
-if (n_sent != 2) { /* something wrong */
-	if (n_sent == 0) {
-		sys_errmsg();
-		return 1;
-	} else {
-		return 2;
-	}
-} else {
-	return 0;
-}
-@
-
-Based on the function above, we now can define a function to click at
-a purposed position.  The values of x and y are follow the api specification
-of _SendInput_, change from 0 to 65535, (0,0) is the upper-left corner,
-(65535, 65535) is the lower-right corner.
-
-@[functions@]
-int
-click_once_at(int x, int y)
-{
-	@{move mouse@}
-
-	return click_once();
-}
-@
-
-@[prototypes@]
-int click_once_at(int, int);
-@
-
-@[move mouse@]
-{
-	INPUT input;
-	UINT n_sent;
-	input.type = INPUT_MOUSE;
-	input.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
-	input.mi.dx = (LONG) x;
-	input.mi.dy = (LONG) y;
-	
-	input.mi.time = 0;
-	input.mi.mouseData = 0;
-	input.mi.dwExtraInfo = (ULONG_PTR) NULL;
-
-	n_sent = SendInput(1, &input, sizeof(INPUT));
-	if (n_sent != 1) {
-		sys_errmsg();
-		return 1;
-	}
-}
-@
-
-### Information of game's window
-
-## Game related
-
 ## Auto Clicker
 
-The highest fps priconne can suffort is 60fps, so, a sleeping time of 15ms
-may be sufficient.
-
-@[sleep for a while@]
-Sleep(500);
+The hotkeys:
+	CTRL+SHIFT+S	start/stop
+@[data@]
+#define AUTOCLICKER_SS 1
 @
 
-@[take actions@]
-click_once_at(20000, 20000);
+@[initialize environment@]
+if (register_hotkey('S', AUTOCLICKER_SS)) {
+	info(errmsg);
+	exit(1);
+}
 @
+
+The auto clicker is highly time-critical.
+@[initialize environment@]
+SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+@
+
+
+@[hotkey handlers@]
+case AUTOCLICKER_SS:
+	if (context == NULL) {
+		context = interception_create_context();
+		@{start clicking@}
+	} else {
+		@{end clicking@}
+		interception_destroy_context(context);
+		context = NULL;
+	}
+@
+
+
+The auto clicks are performed by a seperate thread.
+
+@[data@]
+HANDLE hClicker;
+@
+
