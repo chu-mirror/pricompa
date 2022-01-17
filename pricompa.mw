@@ -163,7 +163,7 @@ The custom of exception handling is consistent through out the program.
 int
 register_hotkey(char key, int id)
 {
-	if (RegisterHotKey(NULL, id, MOD, key-'A'+0x41)) {
+	if (RegisterHotKey(NULL, id, MOD, (key-'A') + 0x41)) {
 		return 0;
 	} else {
 		get_sys_errmsg();
@@ -203,17 +203,19 @@ To use this library, we need to declare some variables at first.
 @[data@]
 InterceptionContext context = NULL;
 InterceptionDevice device;
+InterceptionStroke stroke;
 @
 
-To do clicking, we need a basic action of clicking once at purposed position,
-since the game has a fixed layout, we can simply record these positions in an array.
+To do clicking, we need a basic action of clicking once at purposed positions,
+since the game has a fixed layout of UI elements, we can simply record these positions in an array.
 @[data@]
 typedef struct position {
 	int x;
 	int y;
 } position;
 
-position positions[200]; /* a magic number, but I don't want to waste time on it */
+#define MAXPOS 200
+position positions[MAXPOS];
 @
 
 Because we use this library to send mouse input rather than to filter it, we should
@@ -227,24 +229,17 @@ left_down.state = INTERCEPTION_MOUSE_LEFT_BUTTON_DOWN;
 left_up.state = INTERCEPTION_MOUSE_LEFT_BUTTON_UP;
 @
 
+This function does not guarantee success, nor examine the environment.
+It's time-critical, and supposed to be thread-safe.
 @[functions@]
 int
 click_once()
 {
 	int left = 2;
-	if (context == NULL) {
-		get_nonsys_errmsg("have not initialize context");
-		return 1;
-	}
 	left -= interception_send(context, INTERCEPTION_MOUSE(1), (InterceptionStroke *)&left_down, 1);
-	Sleep(2);
+	Sleep(1);
 	left -= interception_send(context, INTERCEPTION_MOUSE(1), (InterceptionStroke *)&left_up, 1);
-	if (left == 0) {
-		return 0;
-	} else {
-		get_nonsys_errmsg("failed to send one click");
-		return 1;
-	}
+	return left;
 }
 @
 
@@ -252,16 +247,201 @@ click_once()
 int click_once(void);
 @
 
-## Auto Clicker
+If we want to tell where to click, we must have some knowledge of game.
 
-The hotkeys:
-	CTRL+SHIFT+S	start/stop
+The first step is finding out the handle of window, the function find the window's handle
+and save it to a global variable.
 @[data@]
-#define AUTOCLICKER_SS 1
+HWND game_window;
+WINDOWINFO game_window_info;
 @
 
 @[initialize environment@]
-if (register_hotkey('S', AUTOCLICKER_SS)) {
+game_window_info.cbSize = sizeof(WINDOWINFO);
+@
+
+@[functions@]
+int
+valid_window()
+{
+	return GetWindowInfo(game_window, &game_window_info);
+}
+
+int
+get_game_window()
+{
+	if (valid_window()) {
+		return 0; /* stop finding if it already exsit */
+	}
+
+	@{find game window@}
+
+	if (valid_window()) {
+		return 0;
+	} else {
+		get_nonsys_errmsg("can not find game window");
+		return 1;
+	}
+}
+@
+
+@[prototypes@]
+int valid_window(void);
+int get_game_window(void);
+@
+
+@[functions@]
+BOOL
+if_priconne(HWND hwnd, LPARAM lParam)
+{
+	static CHAR title[100];
+	GetWindowTextA(hwnd, title, 100);
+	if (!strcmp(title, "PrincessConnectReDive")) {
+		game_window = hwnd;
+		GetWindowInfo(game_window, &game_window_info);
+		return FALSE;
+	} else {
+		return TRUE;
+	}
+}
+@
+
+@[prototypes@]
+BOOL CALLBACK if_priconne(_In_ HWND, _In_ LPARAM);
+@
+
+@[includes@]
+#include <string.h>
+@
+
+@[find game window@]
+EnumWindows((WNDENUMPROC) if_priconne, NULL);
+@
+
+Before we dive into game's UI elements, we should complete the definition of positions.
+A position (x, y), 0 <= x <= 255, 0 <= y <= 255, game's client area's left-top corner is at (0, 0),
+right-bottom corner is at (255, 255).
+
+@[functions@]
+int
+pos_to_point(int pos_id, PPOINT pp)
+{
+	if (!valid_window()) {
+		get_nonsys_errmsg("can not find game window");
+		return 1;
+	}
+	{
+		LONG l = game_window_info.rcClient.left;
+		LONG r = game_window_info.rcClient.right;
+		LONG t = game_window_info.rcClient.top;
+		LONG b = game_window_info.rcClient.bottom;
+		int x = positions[pos_id].x;
+		int y = positions[pos_id].y;
+
+		pp->x = (x / 256.0) * (r - l + 1) + l;
+		pp->y = (y / 256.0) * (b - t + 1) + t;
+	}
+	return 0;
+}
+@
+
+@[prototypes@]
+int pos_to_point(int, PPOINT);
+@
+
+Because this transition is time-consuming, I prefer initialize all points
+before using them.
+@[data@]
+POINT points[MAXPOS];
+@
+
+@[functions@]
+int
+get_transitions()
+{
+	int i;
+
+	for (i = 0; i < MAXPOS; i++) {
+		if (positions[i].x && positions[i].y) {
+			if (pos_to_point(i, &points[i])) return 1;
+		}
+	}
+	return 0;
+}
+@
+
+@[prototypes@]
+int get_transitions(void);
+@
+
+After the clicking, we should deal with the moving.
+@[data@]
+InterceptionMouseStroke move;
+@
+
+@[initialize environment@]
+move.flags = INTERCEPTION_MOUSE_MOVE_ABSOLUTE;
+@
+
+@[functions@]
+int
+move_to(int pos_id)
+{
+	move.x = points[pos_id].x * (65536.0/GetSystemMetrics(SM_CXSCREEN));
+	move.y = points[pos_id].y * (65536.0/GetSystemMetrics(SM_CYSCREEN));
+	interception_send(context, INTERCEPTION_MOUSE(1), (InterceptionStroke *)&move, 1);
+}
+@
+
+@[prototypes@]
+int move_to(int);
+@
+
+We now be able to finish this topic.
+@[functions@]
+int
+click_once_at(int pos_id)
+{
+	move_to(pos_id);
+	return click_once();
+}
+@
+
+@[prototypes@]
+int click_once_at(int);
+@
+
+The following is a list of UI elements in game.
+@[data@]
+enum battle{
+	UB_1 = 1, UB_2, UB_3, UB_4, UB_5,
+	SPEED = 11,
+	AUTO = 21,
+	PAUSE = 31
+};
+@
+
+@[initialize environment@]
+positions[UB_1].x = 63; positions[UB_1].y = 211;
+positions[UB_2].x = 97; positions[UB_2].y = 211;
+positions[UB_3].x = 128; positions[UB_3].y = 211;
+positions[UB_4].x = 160; positions[UB_4].y = 211;
+positions[UB_5].x = 193; positions[UB_5].y = 211;
+positions[SPEED].x = 242; positions[SPEED].y = 238;
+positions[AUTO].x = 242; positions[AUTO].y = 198;
+positions[PAUSE].x = 242; positions[PAUSE].y = 13;
+@
+
+## Auto Clicker
+
+The hotkeys:
+	CTRL+SHIFT+A	start auto clicker
+@[data@]
+#define AUTOCLICKER_START 1
+@
+
+@[initialize environment@]
+if (register_hotkey('A', AUTOCLICKER_START)) {
 	info(errmsg);
 	exit(1);
 }
@@ -272,23 +452,133 @@ The auto clicker is highly time-critical.
 SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 @
 
-
 @[hotkey handlers@]
-case AUTOCLICKER_SS:
-	if (context == NULL) {
-		context = interception_create_context();
-		@{start clicking@}
-	} else {
-		@{end clicking@}
-		interception_destroy_context(context);
-		context = NULL;
+case AUTOCLICKER_START:
+	if (context != NULL) {
+		info("fatal error: context is already created");
+		exit(1);
 	}
+	info("auto clicker start");
+	@{prepare game window@}
+	context = interception_create_context();
+	@{start auto clicker@}
+	interception_destroy_context(context);
+	context = NULL;
+	info("auto clicker stop");
+break;
+@
+
+@[prepare game window@]
+get_game_window();
+get_transitions();
 @
 
 
-The auto clicks are performed by a seperate thread.
+There are two patterns of auto clicking, one for manual, one for semi-auto.
+@[functions@]
+DWORD
+auto_click_manual(LPVOID param)
+{
+	static DWORD delay = 20;
+	while (1) {
+		click_once();
+		Sleep(delay);
+	}
+	return 0;
+}
+@
+
+@[prototypes@]
+DWORD auto_click_manual(LPVOID);
+@
+
+The two functions are performed by threads.  The threads are created in initialization,
+controled by suspending and resuming.
+@[data@]
+HANDLE auto_clicker;
+@
+
+@[initialize environment@]
+auto_clicker = CreateThread(NULL, 0,
+	auto_click_manual, NULL,
+	CREATE_SUSPENDED, NULL);
+@
+
+The logic of auto clicker is very simple, it simply block other keys when in clicking.
+@[data@]
+int in_clicking;
+int ub_in_spamming;
+@
+
+The key bindings are done by an array.
+The default bindings are:
+	UB1:	A
+	UB2:	S
+	UB3:	D
+	UB4:	F
+	UB5:	G
+	SPEED:	SPACE
+	AUTO:	C
+	PAUSE:	B
+	QUIT:	Q
 
 @[data@]
-HANDLE hClicker;
+enum autoclicker_event {
+	UB1 = 1, UB2, UB3, UB4, UB5,
+	SWITCH_SPEED, CHANGE_AUTO,
+	DO_PAUSE, QUIT
+};
+int autoclicker_keymap[256] = {
+	[0x10] = QUIT,
+	[0x1e] = UB1,
+	[0x1f] = UB2,
+	[0x20] = UB3,
+	[0x21] = UB4,
+	[0x22] = UB5,
+	[0x2e] = CHANGE_AUTO,
+	[0x30] = DO_PAUSE,
+	[0x39] = SWITCH_SPEED,
+};
+int autoclicker_event_pos_map[] = { 0,
+	UB_1, UB_2, UB_3, UB_4, UB_5,
+	SPEED, AUTO, PAUSE
+};
+	
+@
+
+@[start auto clicker@]
+interception_set_filter(context, interception_is_keyboard,
+	INTERCEPTION_FILTER_KEY_DOWN | INTERCEPTION_FILTER_KEY_UP);
+interception_set_filter(context, interception_is_mouse,
+	INTERCEPTION_FILTER_MOUSE_ALL);
+while (interception_receive(context, device = interception_wait(context), &stroke, 1) > 0) {
+	if (interception_is_mouse(device)) {
+		/* intercept all mouse input */
+	}
+	if (interception_is_keyboard(device)) {
+		InterceptionKeyStroke *pk = (InterceptionKeyStroke *)&stroke;
+		int event = autoclicker_keymap[pk->code];
+
+		interception_send(context, device, &stroke, 1);
+		if (in_clicking) {
+			if (event == ub_in_spamming && pk->state == INTERCEPTION_KEY_UP) {
+				SuspendThread(auto_clicker);
+				in_clicking = 0;
+			}
+			continue;
+		}
+		if (event >= UB1 && event <= UB5 && pk->state == INTERCEPTION_KEY_DOWN) {
+			move_to(autoclicker_event_pos_map[event]);
+			ResumeThread(auto_clicker);
+			in_clicking = 1;
+			ub_in_spamming = event;
+		} else if ((event == CHANGE_AUTO || event == DO_PAUSE || event == SWITCH_SPEED)
+				&& pk->state == INTERCEPTION_KEY_UP) {
+			click_once_at(autoclicker_event_pos_map[event]);
+		} else if (event == QUIT && pk->state == INTERCEPTION_KEY_UP) {
+			break;
+		}
+	}
+}
 @
 
