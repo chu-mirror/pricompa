@@ -31,7 +31,6 @@ main(int argn, char *argv[])
 {
 	@{initialize environment@}
 	@{receive and dispatch events@}
-	@{do cleaning@}
 }
 @
 
@@ -155,9 +154,11 @@ case WM_HOTKEY:
 break;
 @
 
-Hotkeys' modifier is fixed to CTRL+SHIFT.
+Hotkeys' modifier is fixed to CTRL, since these hotkeys might affect other
+application, it's recommanded to execute _pricompa_ only when you need it,
+and close it right away when you finished CB.
 @[data@]
-#define MOD (MOD_CONTROL | MOD_SHIFT | MOD_NOREPEAT)
+#define MOD (MOD_CONTROL | MOD_NOREPEAT)
 @
 
 The custom of exception handling is consistent through out the program.
@@ -180,6 +181,28 @@ register_hotkey(char key, int id)
 
 @[prototypes@]
 int register_hotkey(char, int);
+@
+
+The program can quit elegently with CTRL+Q.
+
+The hotkeys:
+	CTRL+Q	quit
+@[data@]
+#define PRICOMPA_QUIT 0
+@
+
+@[initialize environment@]
+if (register_hotkey('Q', PRICOMPA_QUIT)) {
+	info(errmsg);
+	info("in registering CTRL+Q");
+	exit(1);
+}
+@
+
+@[hotkey handlers@]
+case PRICOMPA_QUIT:
+	exit(0);
+break;
 @
 
 ## Interact with Game
@@ -452,7 +475,7 @@ int click_once_at(int);
 ## Auto Clicker
 
 The hotkeys:
-	CTRL+SHIFT+A	start auto clicker
+	CTRL+A	start auto clicker
 @[data@]
 #define AUTOCLICKER_START 1
 @
@@ -460,6 +483,7 @@ The hotkeys:
 @[initialize environment@]
 if (register_hotkey('A', AUTOCLICKER_START)) {
 	info(errmsg);
+	info("in registering CTRL+A");
 	exit(1);
 }
 @
@@ -501,7 +525,7 @@ The auto clicks are performed by a thread.
 DWORD
 auto_click(LPVOID param)
 {
-	static DWORD delay = 20;
+	static DWORD delay = 15;
 	while (1) {
 		click_once();
 		Sleep(delay);
@@ -579,7 +603,7 @@ interception_set_filter(context, interception_is_mouse,
 	INTERCEPTION_FILTER_MOUSE_ALL);
 while (interception_receive(context, device = interception_wait(context), &stroke, 1) > 0) {
 	if (interception_is_mouse(device)) {
-		/* intercept all mouse input */
+		/* intercept all mouse inputs */
 	}
 	if (interception_is_keyboard(device)) {
 		InterceptionKeyStroke *pk = (InterceptionKeyStroke *)&stroke;
@@ -607,4 +631,138 @@ while (interception_receive(context, device = interception_wait(context), &strok
 	}
 }
 @
+
+## Slacc Mode
+
+Beside the auto clicker above, another type of auto clicking is also convenient(maybe more
+valuable for players prefering semi-auto).  In this mode, you can toggle auto clicking on/off,
+multiple spamming is possible.
+
+The hotkeys:
+	CTRL+S	start slacc mode
+@[data@]
+#define SLACC_START 2
+@
+
+@[initialize environment@]
+if (register_hotkey('S', SLACC_START)) {
+	info(errmsg);
+	info("in registering CTRL+S");
+	exit(1);
+}
+@
+
+Slacc mode uses a similar design.
+@[hotkey handlers@]
+case SLACC_START:
+	if (context != NULL) {
+		info("fatal error: context is already created");
+		exit(1);
+	}
+	info("start slacc mode");
+	@{prepare game window@}
+	context = interception_create_context();
+	@{start slacc mode@}
+	interception_destroy_context(context);
+	context = NULL;
+	info("stop slacc mode");
+break;
+@
+
+### Perform auto clicks in Slacc Mode
+
+Unlike the design of previous auto clicker, the one used here has a lower frequency.
+Because it scans through a list of UB states, clicks and moves at most five times each loop.
+But it's enough for a slaccer, I think.
+
+@[functions@]
+DWORD
+auto_click_slacc(LPVOID param)
+{
+	static DWORD delay = 15;
+	while (1) {
+		@{scan through the list and click@}
+		Sleep(delay);
+	}
+	return 0;
+}
+@
+
+@[prototypes@]
+DWORD auto_click_slacc(LPVOID);
+@
+
+The thread is also created in initialization, controled by suspending and resuming.
+@[data@]
+HANDLE auto_clicker_slacc;
+@
+
+@[initialize environment@]
+auto_clicker_slacc = CreateThread(NULL, 0,
+	auto_click_slacc, NULL,
+	CREATE_SUSPENDED, NULL);
+@
+
+### The design of slacc mode
+
+The events and key bindings are as same as before.  The different is that
+we should record all UB states now.
+@[data@]
+int ub_states[UB5+1];
+int in_slacc_clicking;
+@
+
+@[scan through the list and click@]
+{
+	int i;
+	for (i = UB1; i <= UB5; i++) {
+		if (ub_states[i]) {
+			click_once_at(autoclicker_event_pos_map[i]);
+			Sleep(15);
+		}
+	}
+}
+@
+
+@[start slacc mode@]
+interception_set_filter(context, interception_is_keyboard, INTERCEPTION_FILTER_KEY_DOWN);
+interception_set_filter(context, interception_is_mouse, INTERCEPTION_FILTER_MOUSE_ALL);
+while (interception_receive(context, device = interception_wait(context), &stroke, 1) > 0) {
+	if (interception_is_mouse(device)) {
+		/* intercept all mouse inputs */
+	}
+	if (interception_is_keyboard(device)) {
+		InterceptionKeyStroke *pk = (InterceptionKeyStroke *)&stroke;
+		int event = autoclicker_keymap[pk->code];
+
+		interception_send(context, device, &stroke, 1);
+		if (event >= UB1 && event <= UB5) {
+			ub_states[event] = !ub_states[event];
+			@{suspend or resume thread@}
+		} else if (event == CHANGE_AUTO || event == DO_PAUSE || event == SWITCH_SPEED) {
+			click_once_at(autoclicker_event_pos_map[event]);
+		} else if (event == QUIT) {
+			SuspendThread(auto_clicker_slacc);
+			break;
+		}
+	}
+}
+@
+
+@[suspend or resume thread@]
+{
+	int i, any_running = 0;
+	for (i = UB1; i <= UB5; i++) {
+		any_running |= ub_states[i];
+	}
+	if (any_running && !in_slacc_clicking) {
+		ResumeThread(auto_clicker_slacc);
+		in_slacc_clicking = 1;
+	} else if (!any_running && in_slacc_clicking) {
+		SuspendThread(auto_clicker_slacc);
+		in_slacc_clicking = 0;
+	}
+}
+@
+
 
