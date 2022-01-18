@@ -742,7 +742,10 @@ while (interception_receive(context, device = interception_wait(context), &strok
 		} else if (event == CHANGE_AUTO || event == DO_PAUSE || event == SWITCH_SPEED) {
 			click_once_at(autoclicker_event_pos_map[event]);
 		} else if (event == QUIT) {
+			int i;
 			SuspendThread(auto_clicker_slacc);
+			for (i = UB1; i <= UB5; i++) ub_states[i] = 0;
+			in_slacc_clicking = 0;
 			break;
 		}
 	}
