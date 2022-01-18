@@ -57,7 +57,9 @@ The program is built upon Win32 API, but do not use utf-16.
 }
 @
 
-Since I do not want to handle error messages in Windows way, neither the management
+### Error handling
+
+Since I do not want to handle error messages in Windows way, nor the management
 of memory, so prepare a buffer to transfer error messages.
 @[data@]
 #define MAXMSG 2048
@@ -116,8 +118,10 @@ get_sys_errmsg();
 exit(1);
 @
 
-The program is a console application, users can suppose information prompted by
-the console.  I simply use standard C library here.
+### Output
+
+The program is a console application, users can suppose information prompted by console.
+I simply use standard C library here.
 
 @[includes@]
 #include <stdio.h>
@@ -138,6 +142,8 @@ void info(const char *);
 @[show error message@]
 info(errmsg);
 @
+
+### Interact with Pricompa
 
 Use hotkeys to interact with _Pricompa_.
 
@@ -179,7 +185,7 @@ int register_hotkey(char, int);
 ## Interact with Game
 
 Clicking are supposed to be the only officially supported way we send inputs to game,
-but we need the clicks coming from hardware driver level.  _Pricompa_ uses
+but we need mouse inputs coming from hardware driver level.  _Pricompa_ uses
 library [interception](https://github.com/oblitum/Interception)
 to interact with game.  This library allows a process functioning as a filter
 of device inputs.
@@ -206,17 +212,7 @@ InterceptionDevice device;
 InterceptionStroke stroke;
 @
 
-To do clicking, we need a basic action of clicking once at purposed positions,
-since the game has a fixed layout of UI elements, we can simply record these positions in an array.
-@[data@]
-typedef struct position {
-	int x;
-	int y;
-} position;
-
-#define MAXPOS 200
-position positions[MAXPOS];
-@
+### Clicks
 
 Because we use this library to send mouse input rather than to filter it, we should
 construct input events ourselves.
@@ -247,7 +243,44 @@ click_once()
 int click_once(void);
 @
 
-If we want to tell where to click, we must have some knowledge of game.
+### Game's UI
+
+To do clicking, we need a basic action of clicking once at purposed positions,
+since the game has a fixed layout of UI elements, we can simply record these positions in an array.
+@[data@]
+typedef struct position {
+	int x;
+	int y;
+} position;
+
+#define MAXPOS 200
+position positions[MAXPOS];
+@
+
+The following is a list of UI elements in game.
+@[data@]
+enum battle{
+	UB_1 = 1, UB_2, UB_3, UB_4, UB_5,
+	SPEED = 11,
+	AUTO = 21,
+	PAUSE = 31
+};
+@
+
+@[initialize environment@]
+positions[UB_1].x = 63; positions[UB_1].y = 211;
+positions[UB_2].x = 97; positions[UB_2].y = 211;
+positions[UB_3].x = 128; positions[UB_3].y = 211;
+positions[UB_4].x = 160; positions[UB_4].y = 211;
+positions[UB_5].x = 193; positions[UB_5].y = 211;
+positions[SPEED].x = 242; positions[SPEED].y = 238;
+positions[AUTO].x = 242; positions[AUTO].y = 198;
+positions[PAUSE].x = 242; positions[PAUSE].y = 13;
+@
+
+### Game's Window
+
+If we want to tell where to click, we must have some knowledge of game's window.
 
 The first step is finding out the handle of window, the function find the window's handle
 and save it to a global variable.
@@ -290,6 +323,7 @@ int valid_window(void);
 int get_game_window(void);
 @
 
+Set the corresponding global variables.
 @[functions@]
 BOOL
 if_priconne(HWND hwnd, LPARAM lParam)
@@ -318,7 +352,9 @@ BOOL CALLBACK if_priconne(_In_ HWND, _In_ LPARAM);
 EnumWindows((WNDENUMPROC) if_priconne, NULL);
 @
 
-Before we dive into game's UI elements, we should complete the definition of positions.
+### Definition of Positions
+
+Before we do mouse's moving, we should complete the definition of positions.
 A position (x, y), 0 <= x <= 255, 0 <= y <= 255, game's client area's left-top corner is at (0, 0),
 right-bottom corner is at (255, 255).
 
@@ -349,7 +385,7 @@ pos_to_point(int pos_id, PPOINT pp)
 int pos_to_point(int, PPOINT);
 @
 
-Because this transition is time-consuming, I prefer initialize all points
+Because this transition is time-consuming, I prefer initializing all points
 before using them.
 @[data@]
 POINT points[MAXPOS];
@@ -374,7 +410,9 @@ get_transitions()
 int get_transitions(void);
 @
 
-After the clicking, we should deal with the moving.
+### Move Mouse
+
+To click at purposed positions, we should also deal with the moving.
 @[data@]
 InterceptionMouseStroke move;
 @
@@ -389,7 +427,7 @@ move_to(int pos_id)
 {
 	move.x = points[pos_id].x * (65536.0/GetSystemMetrics(SM_CXSCREEN));
 	move.y = points[pos_id].y * (65536.0/GetSystemMetrics(SM_CYSCREEN));
-	interception_send(context, INTERCEPTION_MOUSE(1), (InterceptionStroke *)&move, 1);
+	return interception_send(context, INTERCEPTION_MOUSE(1), (InterceptionStroke *)&move, 1);
 }
 @
 
@@ -409,27 +447,6 @@ click_once_at(int pos_id)
 
 @[prototypes@]
 int click_once_at(int);
-@
-
-The following is a list of UI elements in game.
-@[data@]
-enum battle{
-	UB_1 = 1, UB_2, UB_3, UB_4, UB_5,
-	SPEED = 11,
-	AUTO = 21,
-	PAUSE = 31
-};
-@
-
-@[initialize environment@]
-positions[UB_1].x = 63; positions[UB_1].y = 211;
-positions[UB_2].x = 97; positions[UB_2].y = 211;
-positions[UB_3].x = 128; positions[UB_3].y = 211;
-positions[UB_4].x = 160; positions[UB_4].y = 211;
-positions[UB_5].x = 193; positions[UB_5].y = 211;
-positions[SPEED].x = 242; positions[SPEED].y = 238;
-positions[AUTO].x = 242; positions[AUTO].y = 198;
-positions[PAUSE].x = 242; positions[PAUSE].y = 13;
 @
 
 ## Auto Clicker
@@ -468,16 +485,21 @@ case AUTOCLICKER_START:
 break;
 @
 
+Ignore this event if the game has not been prepared.
 @[prepare game window@]
-get_game_window();
+if (get_game_window()) {
+	info(errmsg);
+	continue;
+}
 get_transitions();
 @
 
+### Perform auto clicks
 
-There are two patterns of auto clicking, one for manual, one for semi-auto.
+The auto clicks are performed by a thread.
 @[functions@]
 DWORD
-auto_click_manual(LPVOID param)
+auto_click(LPVOID param)
 {
 	static DWORD delay = 20;
 	while (1) {
@@ -489,22 +511,24 @@ auto_click_manual(LPVOID param)
 @
 
 @[prototypes@]
-DWORD auto_click_manual(LPVOID);
+DWORD auto_click(LPVOID);
 @
 
-The two functions are performed by threads.  The threads are created in initialization,
-controled by suspending and resuming.
+The thread is created in initialization, controled by suspending and resuming.
 @[data@]
 HANDLE auto_clicker;
 @
 
 @[initialize environment@]
 auto_clicker = CreateThread(NULL, 0,
-	auto_click_manual, NULL,
+	auto_click, NULL,
 	CREATE_SUSPENDED, NULL);
 @
 
-The logic of auto clicker is very simple, it simply block other keys when in clicking.
+### The design of auto clicker
+
+The logic of auto clicker is very simple, it simply block other keys when in clicking,
+which means you can not spam two UBs simultaneously.
 @[data@]
 int in_clicking;
 int ub_in_spamming;
@@ -543,9 +567,11 @@ int autoclicker_event_pos_map[] = { 0,
 	UB_1, UB_2, UB_3, UB_4, UB_5,
 	SPEED, AUTO, PAUSE
 };
-	
 @
 
+This is the hardest part of auto clicker, but this is regarded as a whole part that
+follow the coding custom of library interception.  So I choose not to divide it to
+smaller parts.
 @[start auto clicker@]
 interception_set_filter(context, interception_is_keyboard,
 	INTERCEPTION_FILTER_KEY_DOWN | INTERCEPTION_FILTER_KEY_UP);
