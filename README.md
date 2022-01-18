@@ -1,6 +1,6 @@
 # Pricompa (priconne companion)
 
-Manual: [English](./Manual.md) [中文](./Manual_zh.md) [日本語](./Manual_jp.md)
+Manual: [English](../../Manual.md) [中文](../../Manual_zh.md) [日本語](../../Manual_jp.md)
 
 
 Download the zip file, do:
