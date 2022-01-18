@@ -2,6 +2,8 @@
 
 Manual: [English](./MANUAL.md) [中文](./MANUAL_zh.md) [日本語](./MANUAL_jp.md)
 
+Presentation Video: [Installation](https://youtu.be/FogNxZEVxyA) [Slacc Mode](https://youtu.be/Ifk-iNF8HBM)
+
 
 Download the zip file, do:
 
