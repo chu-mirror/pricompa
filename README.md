@@ -1,9 +1,11 @@
 # Pricompa (priconne companion)
 
-Manual: [English](./MANUAL.md) [中文](./MANUAL_zh.md) [日本語](./MANUAL_jp.md)
+Auto clicker for game Princess Connect Re:Dive. See manual [English](./MANUAL.md) [中文](./MANUAL_zh.md) [日本語](./MANUAL_jp.md)
+for more information.
 
-Presentation Video: [Installation](https://youtu.be/FogNxZEVxyA) [Slacc Mode](https://youtu.be/Ifk-iNF8HBM)
+Presentation Video: [Installation](https://youtu.be/FogNxZEVxyA) | [Slacc Mode](https://youtu.be/Ifk-iNF8HBM)
 
+## Installation
 
 Download the zip file, do:
 

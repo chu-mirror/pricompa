@@ -1,7 +1,6 @@
 # Manual
 
-__Important__: It's your responsibility if your account is banned
-because of this tool's using.
+__Important__: Use this tool at your own risk.
 
 Short cuts:
 
