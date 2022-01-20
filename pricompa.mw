@@ -156,7 +156,7 @@ break;
 
 Hotkeys' modifier is fixed to CTRL, since these hotkeys might affect other
 application, it's recommanded to execute _pricompa_ only when you need it,
-and close it right away when you finished CB.
+and close it right away when you finished using.
 @[data@]
 #define MOD (MOD_CONTROL | MOD_NOREPEAT)
 @
