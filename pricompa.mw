@@ -756,10 +756,12 @@ while (interception_receive(context, device = interception_wait(context), &strok
 {
 	int i, any_running = 0;
 	for (i = UB1; i <= UB5; i++) {
-		any_running |= ub_states[i];
+		any_running += ub_states[i];
 	}
 	if (any_running && !in_slacc_clicking) {
-		ResumeThread(auto_clicker_slacc);
+		if (ResumeThread(auto_clicker_slacc) > 1) {
+			ResumeThread(auto_clicker_slacc);
+		}
 		in_slacc_clicking = 1;
 	} else if (!any_running && in_slacc_clicking) {
 		SuspendThread(auto_clicker_slacc);
