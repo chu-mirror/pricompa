@@ -1,5 +1,7 @@
 # Pricompa (priconne companion)
 
+__The functionalities are supported officially in Spring Updates__
+
 Auto clicker for game Princess Connect Re:Dive. See manual [English](./MANUAL.md) [中文](./MANUAL_zh.md) [日本語](./MANUAL_jp.md)
 for more information.
 
